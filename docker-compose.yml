@@ -1,0 +1,25 @@
+# ==============================================================
+# docker-compose.yml
+# ==============================================================
+version: '3.8'
+
+services:
+  discord-bot:
+    build: .
+    container_name: discord-bot
+    env_file:
+      - .env
+    restart: unless-stopped
+    # Mount log file so you can read logs from host
+    volumes:
+      - ./bot.log:/app/bot.log
+    # If your webhook endpoint is on the same host and uses LAN IP (192.168.x.x),
+    # the container can usually reach it via bridge network. If you need container
+    # to use host networking (Linux only), uncomment the next line:
+    # network_mode: "host"
+    # Optional: limit resources
+    # deploy:
+    #   resources:
+    #     limits:
+    #       cpus: '0.5'
+    #       memory: 256M
