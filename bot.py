@@ -1,26 +1,25 @@
 import discord
 import os
 import logging
+import asyncio
+import re
 from discord.ext import commands
 from dotenv import load_dotenv
-import aiohttp
-import uuid
-import re
+import google.generativeai as genai
 
 load_dotenv()
 
-# Choose production webhook if available, otherwise fallback to dev/test webhook
-WEBHOOK_URL = os.getenv("WEBHOOK_URL_PRODUCTION") or os.getenv("WEBHOOK_URL")
-if WEBHOOK_URL:
-    print(f"Using webhook URL: {WEBHOOK_URL}")
-else:
-    raise RuntimeError("Ingen WEBHOOK_URL_PRODUCTION eller WEBHOOK_URL sat i .env")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+if not GEMINI_API_KEY:
+    raise RuntimeError("GEMINI_API_KEY er ikke sat i .env")
 
-# Session storage: gem en sessionId pr. bruger (kan udvides til DB)
-user_sessions = {}
+genai.configure(api_key=GEMINI_API_KEY)
+model = genai.GenerativeModel("gemini-3.1-flash-lite")
 
-# Create a Discord client instance and set the command prefix
-intents = discord.Intents.all()  # Sørg for Message Content Intent er aktiveret i Developer Portal
+# Gem samtalehistorik pr. bruger
+user_chats: dict[str, genai.ChatSession] = {}
+
+intents = discord.Intents.all()
 bot = commands.Bot(command_prefix='!', intents=intents)
 
 logging.basicConfig(
@@ -32,108 +31,76 @@ logging.basicConfig(
     ]
 )
 
+
 @bot.event
 async def on_ready():
-    print(f'Logged in as {bot.user.name} ({bot.user.id})')
+    logging.info(f'Logged in as {bot.user.name} ({bot.user.id})')
+
 
 @bot.event
 async def on_command_error(ctx, error):
-    error_message = f'Error occured while processing command: {error}'
-    logging.error(error_message)
+    logging.error(f'Command error: {error}')
     try:
-        await ctx.send(error_message)
+        await ctx.send(f'Fejl: {error}')
     except Exception:
         pass
 
-# Hjælpefunktion: send payload til webhook og returner reply-text (eller fejltekst)
-async def forward_to_webhook_and_get_reply(question: str, user_id: str, channel_id: str):
-    # Genbrug sessionId for brugeren, eller opret ny hvis ikke eksisterer
-    session_id = user_sessions.get(user_id)
-    if not session_id:
-        session_id = f"SESSION-{uuid.uuid4()}"
-        user_sessions[user_id] = session_id
 
-    payload = {
-        "question": question,
-        "userName": user_id,
-        "channelId": channel_id,
-        "sessionId": session_id
-    }
+async def ask_gemini(question: str, user_id: str) -> str:
+    if user_id not in user_chats:
+        user_chats[user_id] = model.start_chat(history=[])
 
+    chat = user_chats[user_id]
     try:
-        async with aiohttp.ClientSession() as session:
-            async with session.post(WEBHOOK_URL, json=payload, headers={"Content-Type": "application/json"}) as resp:
-                if resp.status == 200:
-                    try:
-                        data = await resp.json()
-                        reply_text = data.get("reply") or ""
-                    except Exception:
-                        reply_text = ""
-                    return reply_text
-                else:
-                    text = await resp.text()
-                    logging.error(f"Webhook returned {resp.status}: {text}")
-                    return "Der skete en fejl ved at sende til webhook (ikke 200)."
+        response = await asyncio.to_thread(chat.send_message, question)
+        return response.text
     except Exception:
-        logging.exception("Fejl ved POST til webhook")
-        return "Fejl ved at kontakte webhook. Prøv igen senere."
+        logging.exception("Fejl ved Gemini API-kald")
+        return "Fejl ved at kontakte Gemini. Prøv igen senere."
 
-# !chat kommandoen (bevarer eksisterende funktionalitet)
+
 @bot.command(name='chat')
 async def chat(ctx, *, question: str = None):
     if not question:
-        await ctx.send("Skriv venligst dit spørgsmål efter !chat, fx: !chat Hvad er den største planet?")
+        await ctx.send("Skriv dit spørgsmål efter !chat, fx: !chat Hvad er den største planet?")
         return
 
-    user_id = str(ctx.author.id)
-    channel_id = str(ctx.channel.id)
-
-    reply_text = await forward_to_webhook_and_get_reply(question, user_id, channel_id)
-
-    # SEND KUN svaret (ingen mention). Bloker mentions i output for sikkerhed.
+    reply = await ask_gemini(question, str(ctx.author.id))
     allowed = discord.AllowedMentions(users=False, roles=False, everyone=False)
-    await ctx.send(reply_text, allowed_mentions=allowed)
+    await ctx.send(reply, allowed_mentions=allowed)
 
-# Lyt efter mention: når botten nævnes i en besked, brug resten som spørgsmål
+
 @bot.event
 async def on_message(message):
-    # Ignorer beskeder fra bots (inkl. sig selv)
     if message.author.bot:
         return
 
-    # Hvis botten nævnes i message.mentions -> behandl som chat
     if bot.user in message.mentions:
-        # Fjern mention-strings (<@123...> og <@!123...>) fra indholdet
-        content = message.content
-        content_without_mention = re.sub(rf'<@!?\s*{bot.user.id}\s*>', '', content)
-        question = content_without_mention.strip()
+        content = re.sub(rf'<@!?\s*{bot.user.id}\s*>', '', message.content).strip()
 
-        if not question:
-            # Hvis brugeren kun nævnte botten uden tekst, giv en hurtig besked om hvordan
-            hint = f"Skriv dit spørgsmål efter mention, fx: @{bot.user.name} Hvad er den største planet?"
-            allowed = discord.AllowedMentions(users=False, roles=False, everyone=False)
-            await message.channel.send(hint, allowed_mentions=allowed)
+        if not content:
+            await message.channel.send(
+                f"Skriv dit spørgsmål efter mention, fx: @{bot.user.name} Hvad er den største planet?",
+                allowed_mentions=discord.AllowedMentions(users=False, roles=False, everyone=False)
+            )
         else:
-            user_id = str(message.author.id)
-            channel_id = str(message.channel.id)
-            reply_text = await forward_to_webhook_and_get_reply(question, user_id, channel_id)
+            reply = await ask_gemini(content, str(message.author.id))
+            await message.channel.send(
+                reply,
+                allowed_mentions=discord.AllowedMentions(users=False, roles=False, everyone=False)
+            )
 
-            # SEND KUN svaret (ingen mention). Bloker mentions i output for sikkerhed.
-            allowed = discord.AllowedMentions(users=False, roles=False, everyone=False)
-            await message.channel.send(reply_text, allowed_mentions=allowed)
-
-    # VIGTIGT: tillad commands at fungere som normalt
     await bot.process_commands(message)
 
-# Valgfri: kommando til at nulstille session for brugeren
-@bot.command(name='reset_session')
-async def reset_session(ctx):
-    user_id = str(ctx.author.id)
-    if user_id in user_sessions:
-        del user_sessions[user_id]
-        await ctx.send("Din session er nulstillet.")
-    else:
-        await ctx.send("Du havde ingen aktiv session.")
 
-# Kør botten
+@bot.command(name='reset')
+async def reset(ctx):
+    user_id = str(ctx.author.id)
+    if user_id in user_chats:
+        del user_chats[user_id]
+        await ctx.send("Din samtalehistorik er nulstillet.")
+    else:
+        await ctx.send("Du havde ingen aktiv samtale.")
+
+
 bot.run(os.getenv('TOKEN'))
