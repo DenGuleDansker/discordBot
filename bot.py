@@ -73,8 +73,8 @@ async def chat(ctx, *, question: str = None):
 
     logging.info(f"!chat from {ctx.author}: {question[:50]}")
     reply = await ask_gemini(question, str(ctx.author.id))
-    allowed = discord.AllowedMentions(users=False, roles=False, everyone=False)
-    await ctx.send(reply, allowed_mentions=allowed)
+    allowed = discord.AllowedMentions(users=True, roles=False, everyone=False)
+    await ctx.send(f"{ctx.author.mention} {reply}", allowed_mentions=allowed)
 
 
 @bot.event
@@ -95,8 +95,8 @@ async def on_message(message):
         else:
             reply = await ask_gemini(content, str(message.author.id))
             await message.channel.send(
-                reply,
-                allowed_mentions=discord.AllowedMentions(users=False, roles=False, everyone=False)
+                f"{message.author.mention} {reply}",
+                allowed_mentions=discord.AllowedMentions(users=True, roles=False, everyone=False)
             )
 
     await bot.process_commands(message)
