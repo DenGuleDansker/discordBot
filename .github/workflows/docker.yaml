@@ -1,6 +1,8 @@
 name: Docker
 
 on:
+  schedule:
+    - cron: '27 2 * * *'
   push:
     branches: [ "main" ]
     tags: [ 'v*.*.*' ]
@@ -25,7 +27,37 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up QEMU
+      - name: Print run context (debug)
+        run: |
+          echo "GITHUB_EVENT_NAME: $GITHUB_EVENT_NAME"
+          echo "GITHUB_REF: $GITHUB_REF"
+          echo "GITHUB_SHA: $GITHUB_SHA"
+          echo "GITHUB_ACTOR: $GITHUB_ACTOR"
+          echo "Repository: $GITHUB_REPOSITORY"
+          if [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then
+            echo "This run is a pull_request. Secrets from repo are NOT available for fork PRs."
+          fi
+
+      - name: Debug check Docker Hub secrets
+        if: github.event_name != 'pull_request'
+        run: |
+          if [ -z "${DOCKERHUB_USERNAME}" ]; then
+            echo "DOCKERHUB_USERNAME is not set"
+            exit 1
+          else
+            echo "DOCKERHUB_USERNAME is set"
+          fi
+          if [ -z "${DOCKERHUB_TOKEN}" ]; then
+            echo "DOCKERHUB_TOKEN is not set"
+            exit 1
+          else
+            echo "DOCKERHUB_TOKEN is set"
+          fi
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Set up QEMU (for emulation multi-arch)
         uses: docker/setup-qemu-action@v3
 
       - name: Set up Docker Buildx
@@ -55,7 +87,7 @@ jobs:
             type=sha,prefix={{branch}}-,format=short
             type=semver,pattern={{version}}
 
-      - name: Build and push Docker image
+      - name: Build and push Docker image (multi-arch)
         id: build-and-push
         uses: docker/build-push-action@v6
         with:
@@ -73,4 +105,6 @@ jobs:
           TAGS: ${{ steps.meta.outputs.tags }}
           DIGEST: ${{ steps.build-and-push.outputs.digest }}
         run: |
+          echo "Signing image(s):"
+          echo "${TAGS}"
           echo "${TAGS}" | xargs -I {} cosign sign --yes {}@${DIGEST}
