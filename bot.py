@@ -71,6 +71,7 @@ async def chat(ctx, *, question: str = None):
         await ctx.send("Skriv dit spørgsmål efter !chat, fx: !chat Hvad er den største planet?")
         return
 
+    logging.info(f"!chat from {ctx.author}: {question[:50]}")
     reply = await ask_gemini(question, str(ctx.author.id))
     allowed = discord.AllowedMentions(users=False, roles=False, everyone=False)
     await ctx.send(reply, allowed_mentions=allowed)
@@ -80,6 +81,8 @@ async def chat(ctx, *, question: str = None):
 async def on_message(message):
     if message.author.bot:
         return
+
+    logging.info(f"Message from {message.author}: {message.content[:50]}")
 
     if bot.user in message.mentions:
         content = re.sub(rf'<@!?\s*{bot.user.id}\s*>', '', message.content).strip()
