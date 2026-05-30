@@ -5,7 +5,8 @@ import asyncio
 import re
 from discord.ext import commands
 from dotenv import load_dotenv
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 
 load_dotenv()
 
@@ -13,13 +14,13 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 if not GEMINI_API_KEY:
     raise RuntimeError("GEMINI_API_KEY er ikke sat i .env")
 
-genai.configure(api_key=GEMINI_API_KEY)
-model = genai.GenerativeModel("gemini-3.1-flash-lite")
+client_ai = genai.Client(api_key=GEMINI_API_KEY)
+MODEL = "gemini-2.0-flash"
 
-# Gem samtalehistorik pr. bruger
-user_chats: dict[str, genai.ChatSession] = {}
+user_histories: dict[str, list] = {}
 
-intents = discord.Intents.all()
+intents = discord.Intents.default()
+intents.message_content = True
 bot = commands.Bot(command_prefix='!', intents=intents)
 
 logging.basicConfig(
@@ -47,13 +48,18 @@ async def on_command_error(ctx, error):
 
 
 async def ask_gemini(question: str, user_id: str) -> str:
-    if user_id not in user_chats:
-        user_chats[user_id] = model.start_chat(history=[])
+    history = user_histories.setdefault(user_id, [])
+    history.append(types.Content(role="user", parts=[types.Part(text=question)]))
 
-    chat = user_chats[user_id]
     try:
-        response = await asyncio.to_thread(chat.send_message, question)
-        return response.text
+        response = await asyncio.to_thread(
+            client_ai.models.generate_content,
+            model=MODEL,
+            contents=history,
+        )
+        reply = response.text
+        history.append(types.Content(role="model", parts=[types.Part(text=reply)]))
+        return reply
     except Exception:
         logging.exception("Fejl ved Gemini API-kald")
         return "Fejl ved at kontakte Gemini. Prøv igen senere."
@@ -96,8 +102,8 @@ async def on_message(message):
 @bot.command(name='reset')
 async def reset(ctx):
     user_id = str(ctx.author.id)
-    if user_id in user_chats:
-        del user_chats[user_id]
+    if user_id in user_histories:
+        del user_histories[user_id]
         await ctx.send("Din samtalehistorik er nulstillet.")
     else:
         await ctx.send("Du havde ingen aktiv samtale.")
