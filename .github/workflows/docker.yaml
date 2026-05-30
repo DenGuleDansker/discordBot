@@ -84,7 +84,7 @@ jobs:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
             type=ref,event=branch
-            type=sha,prefix={{branch}}-,format=short
+            type=raw,value={{branch}}-{{date 'YYYYMMDD-HHmmss'}}-{{sha}},enable={{is_default_branch}}
             type=semver,pattern={{version}}
 
       - name: Build and push Docker image (multi-arch)
