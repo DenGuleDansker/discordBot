@@ -17,6 +17,11 @@ if not GEMINI_API_KEY:
 client_ai = genai.Client(api_key=GEMINI_API_KEY)
 MODEL = "gemini-2.0-flash"
 
+SYSTEM_PROMPT = """Du er BotLeth — en Discord bot med stor personlighed. Du er smart, lidt flabet og sarkastisk, men stadig hjælpsom.
+Du svarer altid på dansk medmindre brugeren skriver på et andet sprog.
+Du holder svarene korte og præcise — ingen lange essays medmindre det er nødvendigt.
+Du må gerne bruge humor og ironi, men aldrig være decideret grov."""
+
 user_histories: dict[str, list] = {}
 
 intents = discord.Intents.default()
@@ -56,6 +61,7 @@ async def ask_gemini(question: str, user_id: str) -> str:
             client_ai.models.generate_content,
             model=MODEL,
             contents=history,
+            config=types.GenerateContentConfig(system_instruction=SYSTEM_PROMPT),
         )
         reply = response.text
         history.append(types.Content(role="model", parts=[types.Part(text=reply)]))
