@@ -3,10 +3,14 @@ import os
 import logging
 import asyncio
 import re
+import tempfile
+from pathlib import Path
+from datetime import datetime
 from discord.ext import commands
 from dotenv import load_dotenv
 from google import genai
 from google.genai import types
+from gtts import gTTS
 
 load_dotenv()
 
@@ -17,10 +21,12 @@ if not GEMINI_API_KEY:
 client_ai = genai.Client(api_key=GEMINI_API_KEY)
 MODEL = "gemini-2.5-flash-lite"
 
-SYSTEM_PROMPT = """Du er BotLeth — en Discord bot med stor personlighed. Du er smart, lidt flabet og sarkastisk, men stadig hjælpsom.
+SYSTEM_PROMPT_TEMPLATE = """Du er BotLeth — en Discord bot med stor personlighed. Du er smart, lidt flabet og sarkastisk, men stadig hjælpsom.
 Du svarer altid på dansk medmindre brugeren skriver på et andet sprog.
 Du holder svarene korte og præcise — ingen lange essays medmindre det er nødvendigt.
-Du må gerne bruge humor og ironi, men aldrig være decideret grov."""
+Du må gerne bruge humor og ironi, men aldrig være decideret grov.
+Du kender og kan forklare disse kommandoer: !chat for normal session, !voice for direkte svar i samtalen, og !reset for at nulstille historik.
+Aktuel dato og tid: {current_time}"""
 
 user_histories: dict[str, list] = {}
 
@@ -54,6 +60,8 @@ async def on_command_error(ctx, error):
 
 async def ask_gemini(question: str, user_id: str) -> str:
     history = user_histories.setdefault(user_id, [])
+    current_time = datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S %Z%z")
+    system_prompt = SYSTEM_PROMPT_TEMPLATE.format(current_time=current_time)
     history.append(types.Content(role="user", parts=[types.Part(text=question)]))
 
     try:
@@ -62,7 +70,7 @@ async def ask_gemini(question: str, user_id: str) -> str:
             model=MODEL,
             contents=history,
             config=types.GenerateContentConfig(
-                system_instruction=SYSTEM_PROMPT,
+                system_instruction=system_prompt,
                 tools=[types.Tool(google_search=types.GoogleSearch())],
             ),
         )
@@ -74,8 +82,19 @@ async def ask_gemini(question: str, user_id: str) -> str:
         return "Fejl ved at kontakte Gemini. Prøv igen senere."
 
 
-@bot.command(name='chat')
-async def chat(ctx, *, question: str = None):
+def normalize_prompt(prompt: str | None) -> str | None:
+    if prompt is None:
+        return None
+
+    prompt = prompt.strip()
+    if len(prompt) >= 2 and prompt[0] == prompt[-1] and prompt[0] in {'"', "'"}:
+        prompt = prompt[1:-1].strip()
+
+    return prompt or None
+
+
+async def handle_chat_command(ctx, question: str | None = None):
+    question = normalize_prompt(question)
     if not question:
         await ctx.send("Skriv dit spørgsmål efter !chat, fx: !chat Hvad er den største planet?")
         return
@@ -84,6 +103,72 @@ async def chat(ctx, *, question: str = None):
     reply = await ask_gemini(question, str(ctx.author.id))
     allowed = discord.AllowedMentions(users=True, roles=False, everyone=False)
     await ctx.send(f"{ctx.author.mention} {reply}", allowed_mentions=allowed)
+
+
+async def handle_voice_command(ctx, question: str | None = None):
+    question = normalize_prompt(question)
+    if not question:
+        await ctx.send("Skriv dit spørgsmål efter !voice, fx: !voice Hvad sker der i dag?")
+        return
+
+    logging.info(f"!voice from {ctx.author}: {question[:50]}")
+    reply = await ask_gemini(question, str(ctx.author.id))
+    reply = f"{reply}".strip()
+
+    voice_state = getattr(ctx.author, "voice", None)
+    if not voice_state or not voice_state.channel:
+        await ctx.send("Du skal være inde i en voice-kanal først, før jeg kan tale derinde.")
+        return
+
+    voice_channel = voice_state.channel
+    voice_client = ctx.guild.voice_client if ctx.guild else None
+
+    if voice_client and voice_client.channel != voice_channel:
+        await voice_client.move_to(voice_channel)
+    elif not voice_client:
+        voice_client = await voice_channel.connect()
+
+    with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as temp_file:
+        audio_path = Path(temp_file.name)
+
+    try:
+        tts = gTTS(text=reply, lang="da")
+        await asyncio.to_thread(tts.save, str(audio_path))
+
+        if voice_client.is_playing():
+            voice_client.stop()
+
+        finished = asyncio.Event()
+
+        def after_playback(error: Exception | None):
+            if error:
+                logging.error(f"Fejl under voice-afspilning: {error}")
+            ctx.bot.loop.call_soon_threadsafe(finished.set)
+
+        source = discord.FFmpegPCMAudio(str(audio_path))
+        voice_client.play(source, after=after_playback)
+        await finished.wait()
+    finally:
+        try:
+            if audio_path.exists():
+                audio_path.unlink()
+        except Exception:
+            logging.exception("Kunne ikke slette midlertidig voice-fil")
+
+        if ctx.guild and ctx.guild.voice_client and not ctx.guild.voice_client.is_playing():
+            await ctx.guild.voice_client.disconnect()
+
+    await ctx.send("Jeg er færdig med at tale.")
+
+
+@bot.command(name='chat')
+async def chat(ctx, *, question: str | None = None):
+    await handle_chat_command(ctx, question)
+
+
+@bot.command(name='voice')
+async def voice(ctx, *, question: str | None = None):
+    await handle_voice_command(ctx, question)
 
 
 @bot.event

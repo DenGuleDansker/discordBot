@@ -8,7 +8,7 @@ WORKDIR /app
 
 # Install system build deps for some Python packages (kept minimal)
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends gcc libffi-dev build-essential \
+    && apt-get install -y --no-install-recommends gcc libffi-dev build-essential ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy and install Python deps

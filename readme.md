@@ -6,11 +6,16 @@ Discord bot der svarer på spørgsmål via Google Gemini API. Triggeres via `!ch
 
 ## Features
 
-- `!chat <spørgsmål>` — stil et spørgsmål
+- `!chat <spørgsmål>` — normal session med svar til dig i kanalen
+- `!voice <spørgsmål>` — går ind i din voice-kanal og taler svaret
 - `@bot <spørgsmål>` — mention botten direkte
 - `!reset` — nulstil din samtalehistorik
 - Husker samtalehistorik pr. bruger (in-memory)
 - Blokerer automatiske mentions i svar
+
+Du kan skrive spørgsmålet med eller uden citationstegn, fx `!chat "Hej, hvem er du?"`.
+Botten får altid den aktuelle dato og tid med i prompten, så den kan svare mere korrekt på tidsafhængige spørgsmål.
+Voice-funktionen kræver at du selv sidder i en voice-kanal, og at serveren har `ffmpeg` tilgængeligt.
 
 ---
 
