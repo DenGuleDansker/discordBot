@@ -15,7 +15,7 @@ if not GEMINI_API_KEY:
     raise RuntimeError("GEMINI_API_KEY er ikke sat i .env")
 
 client_ai = genai.Client(api_key=GEMINI_API_KEY)
-MODEL = "gemini-2.0-flash"
+MODEL = "gemini-2.5-flash-lite"
 
 SYSTEM_PROMPT = """Du er BotLeth — en Discord bot med stor personlighed. Du er smart, lidt flabet og sarkastisk, men stadig hjælpsom.
 Du svarer altid på dansk medmindre brugeren skriver på et andet sprog.
@@ -61,7 +61,10 @@ async def ask_gemini(question: str, user_id: str) -> str:
             client_ai.models.generate_content,
             model=MODEL,
             contents=history,
-            config=types.GenerateContentConfig(system_instruction=SYSTEM_PROMPT),
+            config=types.GenerateContentConfig(
+                system_instruction=SYSTEM_PROMPT,
+                tools=[types.Tool(google_search=types.GoogleSearch())],
+            ),
         )
         reply = response.text
         history.append(types.Content(role="model", parts=[types.Part(text=reply)]))
