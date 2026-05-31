@@ -45,8 +45,10 @@ logging.basicConfig(
 EMBED_COLOR = discord.Color.blurple()
 
 
-def make_embed(reply: str, author: discord.User | discord.Member) -> discord.Embed:
+def make_embed(reply: str, author: discord.User | discord.Member, sources: list[str] = []) -> discord.Embed:
     embed = discord.Embed(description=reply[:4096], color=EMBED_COLOR)
+    if sources:
+        embed.add_field(name="Kilder", value="\n".join(f"• {s}" for s in sources), inline=False)
     embed.set_footer(text=f"BotLeth · {MODEL}", icon_url=author.display_avatar.url)
     return embed
 
@@ -62,7 +64,7 @@ async def on_command_error(ctx, error):
     logging.error(f'Command error: {error}')
 
 
-async def ask_gemini(question: str, user_id: str) -> str:
+async def ask_gemini(question: str, user_id: str) -> tuple[str, list[str]]:
     history = user_histories.setdefault(user_id, [])
     current_time = datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S %Z%z")
     system_prompt = SYSTEM_PROMPT_TEMPLATE.format(current_time=current_time)
@@ -80,10 +82,22 @@ async def ask_gemini(question: str, user_id: str) -> str:
         )
         reply = response.text
         history.append(types.Content(role="model", parts=[types.Part(text=reply)]))
-        return reply
+
+        sources = []
+        try:
+            metadata = response.candidates[0].grounding_metadata
+            if metadata and metadata.grounding_chunks:
+                for chunk in metadata.grounding_chunks:
+                    if hasattr(chunk, 'web') and chunk.web and chunk.web.uri:
+                        title = chunk.web.title or "kilde"
+                        sources.append(f"[{title}]({chunk.web.uri})")
+        except Exception:
+            pass
+
+        return reply, sources[:5]
     except Exception:
         logging.exception("Fejl ved Gemini API-kald")
-        return "Fejl ved at kontakte Gemini. Prøv igen senere."
+        return "Fejl ved at kontakte Gemini. Prøv igen senere.", []
 
 
 # --- Slash commands ---
@@ -93,8 +107,8 @@ async def ask_gemini(question: str, user_id: str) -> str:
 async def slash_chat(interaction: discord.Interaction, spørgsmål: str):
     await interaction.response.defer()
     logging.info(f"/chat from {interaction.user}: {spørgsmål[:50]}")
-    reply = await ask_gemini(spørgsmål, str(interaction.user.id))
-    embed = make_embed(reply, interaction.user)
+    reply, sources = await ask_gemini(spørgsmål, str(interaction.user.id))
+    embed = make_embed(reply, interaction.user, sources)
     await interaction.followup.send(embed=embed)
 
 
@@ -106,8 +120,8 @@ async def slash_voice(interaction: discord.Interaction, spørgsmål: str):
         return
 
     await interaction.response.defer()
-    reply = await ask_gemini(spørgsmål, str(interaction.user.id))
-    embed = make_embed(reply, interaction.user)
+    reply, sources = await ask_gemini(spørgsmål, str(interaction.user.id))
+    embed = make_embed(reply, interaction.user, sources)
     await interaction.followup.send(embed=embed)
 
     voice_channel = interaction.user.voice.channel
