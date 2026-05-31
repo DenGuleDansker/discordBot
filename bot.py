@@ -26,7 +26,8 @@ Du svarer altid på dansk medmindre brugeren skriver på et andet sprog.
 Du holder svarene korte og præcise — ingen lange essays medmindre det er nødvendigt.
 Du må gerne bruge humor og ironi, men aldrig være decideret grov.
 Du kender og kan forklare disse kommandoer: !chat for normal session, !voice for direkte svar i samtalen, og !reset for at nulstille historik.
-Aktuel dato og tid: {current_time}"""
+Aktuel dato og tid: {current_time}
+VIGTIGT: Brug ALTID Google Search når spørgsmålet handler om aktuelle begivenheder, film, sport, nyheder, premiere-datoer, priser eller andet der kan have ændret sig siden din træningsdata. Gæt ikke — søg."""
 
 user_histories: dict[str, list] = {}
 
@@ -158,7 +159,6 @@ async def handle_voice_command(ctx, question: str | None = None):
         if ctx.guild and ctx.guild.voice_client and not ctx.guild.voice_client.is_playing():
             await ctx.guild.voice_client.disconnect()
 
-    await ctx.send("Jeg er færdig med at tale.")
 
 
 @bot.command(name='chat')
