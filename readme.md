@@ -17,6 +17,7 @@ Du kan skrive spørgsmålet med eller uden citationstegn, fx `!chat "Hej, hvem e
 Botten får altid den aktuelle dato og tid med i prompten, så den kan svare mere korrekt på tidsafhængige spørgsmål.
 Voice-funktionen kræver at du selv sidder i en voice-kanal, og at serveren har `ffmpeg` tilgængeligt.
 Discord voice kræver også `PyNaCl`, som nu ligger i `requirements.txt`.
+Den nyere voice-support i `discord.py` kræver også `davey`, som nu også ligger i `requirements.txt`.
 
 ---
 
