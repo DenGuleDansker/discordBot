@@ -50,7 +50,8 @@ def make_embed(reply: str, author: discord.User | discord.Member, sources: list[
     if sources:
         embed.add_field(name="Kilder", value="\n".join(f"• {s}" for s in sources), inline=False)
     searched = " · 🔍 søgte på nettet" if sources else ""
-    embed.set_footer(text=f"BotLeth · {MODEL}{searched}", icon_url=author.display_avatar.url)
+    bot_avatar = bot.user.display_avatar.url if bot.user else None
+    embed.set_footer(text=f"BotLeth · {MODEL}{searched}", icon_url=bot_avatar)
     return embed
 
 
