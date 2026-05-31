@@ -102,6 +102,17 @@ async def ask_gemini(question: str, user_id: str) -> tuple[str, list[str]]:
 
 # --- Slash commands ---
 
+@tree.command(name="help", description="Vis BotLeths kommandoer")
+async def slash_help(interaction: discord.Interaction):
+    embed = discord.Embed(title="BotLeth", description="Hej! Jeg er BotLeth.", color=EMBED_COLOR)
+    embed.add_field(name="/chat", value="Stil mig et spørgsmål", inline=False)
+    embed.add_field(name="/voice", value="Stil et spørgsmål og hør svaret i voice", inline=False)
+    embed.add_field(name="/reset", value="Nulstil din samtalehistorik", inline=False)
+    embed.add_field(name="@BotLeth", value="Skriv direkte til mig med et mention", inline=False)
+    embed.set_footer(text=f"Model: {MODEL}")
+    await interaction.response.send_message(embed=embed, ephemeral=True)
+
+
 @tree.command(name="chat", description="Stil BotLeth et spørgsmål")
 @app_commands.describe(spørgsmål="Dit spørgsmål")
 async def slash_chat(interaction: discord.Interaction, spørgsmål: str):
@@ -178,9 +189,9 @@ async def on_message(message):
             return
 
         async with message.channel.typing():
-            reply = await ask_gemini(content, str(message.author.id))
+            reply, sources = await ask_gemini(content, str(message.author.id))
 
-        embed = make_embed(reply, message.author)
+        embed = make_embed(reply, message.author, sources)
         embed.set_author(name=message.author.display_name, icon_url=message.author.display_avatar.url)
         await message.reply(embed=embed, mention_author=True)
 
