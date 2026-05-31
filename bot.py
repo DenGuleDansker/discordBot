@@ -49,7 +49,8 @@ def make_embed(reply: str, author: discord.User | discord.Member, sources: list[
     embed = discord.Embed(description=reply[:4096], color=EMBED_COLOR)
     if sources:
         embed.add_field(name="Kilder", value="\n".join(f"• {s}" for s in sources), inline=False)
-    embed.set_footer(text=f"BotLeth · {MODEL}", icon_url=author.display_avatar.url)
+    searched = " · 🔍 søgte på nettet" if sources else ""
+    embed.set_footer(text=f"BotLeth · {MODEL}{searched}", icon_url=author.display_avatar.url)
     return embed
 
 
@@ -192,7 +193,6 @@ async def on_message(message):
             reply, sources = await ask_gemini(content, str(message.author.id))
 
         embed = make_embed(reply, message.author, sources)
-        embed.set_author(name=message.author.display_name, icon_url=message.author.display_avatar.url)
         await message.reply(embed=embed, mention_author=True)
 
     await bot.process_commands(message)
