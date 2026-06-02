@@ -179,11 +179,12 @@ async def slash_voice(interaction: discord.Interaction, spørgsmål: str):
             voice_client.stop()
 
         finished = asyncio.Event()
+        loop = asyncio.get_running_loop()
 
         def after_playback(error):
             if error:
                 logging.error(f"Voice fejl: {error}")
-            bot.loop.call_soon_threadsafe(finished.set)
+            loop.call_soon_threadsafe(finished.set)
 
         voice_client.play(discord.FFmpegPCMAudio(str(audio_path)), after=after_playback)
         await finished.wait()
